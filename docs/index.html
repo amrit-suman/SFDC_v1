@@ -320,6 +320,7 @@
     border-bottom: 1px solid var(--line);
   }
   .lifecycle li:last-child { border-bottom: none; }
+  .lifecycle li > div { grid-column: 2; }
   .lifecycle li::before {
     content: counter(step);
     font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
