@@ -1,0 +1,705 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Learning log: an authenticated callout from Salesforce to AWS Lambda via Named Credentials, API Gateway, and Secrets Manager.">
+<meta name="robots" content="noindex">
+<title>AWS ⇄ Salesforce Integration — Learning Log</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%94%8C%3C/text%3E%3C/svg%3E">
+<style>
+  :root {
+    --paper: #eef0ed;
+    --paper-raised: #ffffff;
+    --ink: #171b19;
+    --ink-soft: #4b534e;
+    --line: #d8dbd6;
+    --accent: #a85a22;
+    --accent-soft: #f1e3d3;
+    --aws: #b8672c;
+    --aws-soft: #f3e4d4;
+    --sf: #2e6aa6;
+    --sf-soft: #deeaf5;
+    --good: #3f7a4f;
+    --good-soft: #dfeee2;
+    --code-bg: #1b1f1d;
+    --code-ink: #e9c799;
+    --shadow: 0 1px 2px rgba(23, 27, 25, 0.06), 0 8px 24px -12px rgba(23, 27, 25, 0.12);
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #14171a;
+      --paper-raised: #1b1f1d;
+      --ink: #e7e5dd;
+      --ink-soft: #a7ada6;
+      --line: #2b302c;
+      --accent: #e0954f;
+      --accent-soft: #33261a;
+      --aws: #e0954f;
+      --aws-soft: #2f2317;
+      --sf: #74acdc;
+      --sf-soft: #1b2834;
+      --good: #6fbb84;
+      --good-soft: #1c2b20;
+      --code-bg: #0e1110;
+      --code-ink: #f0c98a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+    }
+  }
+  :root[data-theme="dark"] {
+    --paper: #14171a;
+    --paper-raised: #1b1f1d;
+    --ink: #e7e5dd;
+    --ink-soft: #a7ada6;
+    --line: #2b302c;
+    --accent: #e0954f;
+    --accent-soft: #33261a;
+    --aws: #e0954f;
+    --aws-soft: #2f2317;
+    --sf: #74acdc;
+    --sf-soft: #1b2834;
+    --good: #6fbb84;
+    --good-soft: #1c2b20;
+    --code-bg: #0e1110;
+    --code-ink: #f0c98a;
+    --shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 24px -12px rgba(0, 0, 0, 0.5);
+  }
+  :root[data-theme="light"] {
+    --paper: #eef0ed;
+    --paper-raised: #ffffff;
+    --ink: #171b19;
+    --ink-soft: #4b534e;
+    --line: #d8dbd6;
+    --accent: #a85a22;
+    --accent-soft: #f1e3d3;
+    --aws: #b8672c;
+    --aws-soft: #f3e4d4;
+    --sf: #2e6aa6;
+    --sf-soft: #deeaf5;
+    --good: #3f7a4f;
+    --good-soft: #dfeee2;
+    --code-bg: #1b1f1d;
+    --code-ink: #e9c799;
+    --shadow: 0 1px 2px rgba(23, 27, 25, 0.06), 0 8px 24px -12px rgba(23, 27, 25, 0.12);
+  }
+
+  * { box-sizing: border-box; }
+  html { color-scheme: light dark; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px;
+    line-height: 1.65;
+    margin: 0;
+    padding: 0 20px 96px;
+  }
+
+  a { color: var(--accent); }
+
+  .wrap { max-width: 880px; margin: 0 auto; }
+
+  /* ---------- header ---------- */
+  header {
+    padding: 64px 0 40px;
+    border-bottom: 1px solid var(--line);
+    margin-bottom: 40px;
+  }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--accent);
+    margin: 0 0 14px;
+  }
+  h1 {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: clamp(1.6rem, 4vw, 2.15rem);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-wrap: balance;
+    margin: 0 0 14px;
+  }
+  header p.sub {
+    max-width: 640px;
+    color: var(--ink-soft);
+    font-size: 1.02rem;
+    margin: 0 0 20px;
+  }
+  .meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.75rem;
+    color: var(--ink-soft);
+  }
+  .meta-row span {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 4px 9px;
+  }
+
+  /* ---------- section scaffolding ---------- */
+  section { margin-bottom: 56px; }
+  .section-head {
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .section-num {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    color: var(--accent);
+    font-size: 0.85rem;
+  }
+  h2 {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+  h3 {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin: 0;
+  }
+  p { margin: 0 0 14px; }
+
+  /* ---------- chips ---------- */
+  .chip-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .chip.aws { background: var(--aws-soft); color: var(--aws); }
+  .chip.sf { background: var(--sf-soft); color: var(--sf); }
+  .chip.good { background: var(--good-soft); color: var(--good); }
+  .chip.good::before { content: "✓"; }
+
+  /* ---------- architecture diagram ---------- */
+  .diagram {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    box-shadow: var(--shadow);
+    padding: 28px 20px;
+    overflow-x: auto;
+  }
+  .diagram-track {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+    min-width: 720px;
+  }
+  .node {
+    flex: 1;
+    min-width: 108px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 12px 10px;
+    text-align: center;
+    background: var(--paper);
+  }
+  .node .side {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+    display: block;
+  }
+  .node.aws-node { border-top: 3px solid var(--aws); }
+  .node.sf-node { border-top: 3px solid var(--sf); }
+  .node .side.aws-text { color: var(--aws); }
+  .node .side.sf-text { color: var(--sf); }
+  .node .label {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.78rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+  .arrow {
+    flex: 0 0 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--ink-soft);
+    font-size: 1.1rem;
+  }
+  .diagram-caption {
+    margin-top: 16px;
+    font-size: 0.85rem;
+    color: var(--ink-soft);
+    margin-bottom: 0;
+  }
+
+  /* ---------- component cards ---------- */
+  .grid-two {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 720px) {
+    .grid-two { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 20px;
+    box-shadow: var(--shadow);
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .card .what {
+    color: var(--ink-soft);
+    font-size: 0.92rem;
+    margin-bottom: 12px;
+  }
+  .card .config {
+    background: var(--code-bg);
+    color: var(--code-ink);
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.78rem;
+    line-height: 1.7;
+    margin-bottom: 12px;
+    overflow-x: auto;
+  }
+  .card .config .k { color: var(--ink-soft); opacity: 0.75; }
+  .card .why {
+    border-left: 2px solid var(--accent);
+    padding-left: 12px;
+    font-size: 0.88rem;
+    color: var(--ink);
+  }
+  .card .why b {
+    color: var(--accent);
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    display: block;
+    margin-bottom: 4px;
+  }
+
+  /* ---------- lifecycle ---------- */
+  .lifecycle {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    counter-reset: step;
+  }
+  .lifecycle li {
+    counter-increment: step;
+    display: grid;
+    grid-template-columns: 28px 1fr;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .lifecycle li:last-child { border-bottom: none; }
+  .lifecycle li::before {
+    content: counter(step);
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.78rem;
+    color: var(--accent);
+    border: 1px solid var(--line);
+    border-radius: 50%;
+    width: 26px;
+    height: 26px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .lifecycle .step-title {
+    font-weight: 600;
+    font-size: 0.94rem;
+    margin-bottom: 2px;
+  }
+  .lifecycle .step-body {
+    color: var(--ink-soft);
+    font-size: 0.9rem;
+  }
+  .lifecycle code {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    background: var(--accent-soft);
+    color: var(--accent);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.85em;
+  }
+
+  /* ---------- up next ---------- */
+  .next-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .next-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    background: var(--paper-raised);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .status-dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    border: 2px solid var(--ink-soft);
+    flex-shrink: 0;
+  }
+  .next-item .txt { flex: 1; }
+  .next-item .title { font-weight: 600; font-size: 0.94rem; }
+  .next-item .desc { color: var(--ink-soft); font-size: 0.86rem; }
+  .next-item .tag {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.66rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+
+  /* ---------- glossary ---------- */
+  .glossary-wrap { overflow-x: auto; }
+  table {
+    border-collapse: collapse;
+    width: 100%;
+    min-width: 560px;
+    font-size: 0.88rem;
+  }
+  th {
+    text-align: left;
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    padding: 0 12px 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  td {
+    padding: 12px 12px 12px 0;
+    border-bottom: 1px solid var(--line);
+    vertical-align: top;
+  }
+  td:first-child {
+    font-family: ui-monospace, "SF Mono", "Cascadia Code", monospace;
+    font-weight: 600;
+    white-space: nowrap;
+    color: var(--accent);
+  }
+
+  footer {
+    margin-top: 60px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-soft);
+    font-size: 0.82rem;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <p class="eyebrow">Learning log · AWS ⇄ Salesforce integration</p>
+    <h1>Building an authenticated callout from Salesforce to a Lambda function</h1>
+    <p class="sub">A record of what got built, why each piece exists, and how the pieces hand off to one another — worth re-reading before the next session so the reasoning isn't rebuilt from scratch.</p>
+    <div class="meta-row">
+      <span>Session date · 2026-07-08</span>
+      <span>AWS region · us-east-1</span>
+      <span>Auth pattern · Custom header (x-api-key)</span>
+    </div>
+  </header>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">01</span>
+      <h2>The shape of the integration</h2>
+    </div>
+    <div class="diagram">
+      <div class="diagram-track">
+        <div class="node sf-node">
+          <span class="side sf-text">Salesforce</span>
+          <span class="label">Apex<br>AWSLambdaService</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node sf-node">
+          <span class="side sf-text">Salesforce</span>
+          <span class="label">Named Credential<br>AWS_Lambda_Hello</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node sf-node">
+          <span class="side sf-text">Salesforce</span>
+          <span class="label">External Credential<br>+ Principal</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node aws-node">
+          <span class="side aws-text">AWS</span>
+          <span class="label">API Gateway<br>GET /hello</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node aws-node">
+          <span class="side aws-text">AWS</span>
+          <span class="label">Lambda<br>sfdc-hello-lambda</span>
+        </div>
+        <div class="arrow">→</div>
+        <div class="node aws-node">
+          <span class="side aws-text">AWS</span>
+          <span class="label">Secrets Manager<br>sfdc/lambda/apikey</span>
+        </div>
+      </div>
+      <p class="diagram-caption">Every box left of API Gateway lives in Salesforce; everything from API Gateway onward lives in AWS. The two platforms never share a login — they share one secret value, injected as a header.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">02</span>
+      <h2>AWS side</h2>
+    </div>
+    <div class="grid-two">
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Lambda function</h3>
+          <div class="chip-row"><span class="chip aws">Compute</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what">Serverless function — code that runs on demand with no server to provision or patch. It only runs (and only costs anything) when invoked.</p>
+        <div class="config">
+          <div><span class="k">name</span> sfdc-hello-lambda</div>
+          <div><span class="k">runtime</span> Python 3.12</div>
+          <div><span class="k">region</span> us-east-1</div>
+        </div>
+        <div class="why"><b>Why it matters</b>This is the actual endpoint of "AWS processing" — the piece Salesforce is ultimately trying to reach. Everything else in this diagram exists to get a request to this function safely.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>API Gateway</h3>
+          <div class="chip-row"><span class="chip aws">Front door</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what">The managed HTTPS entry point that sits in front of Lambda. Lambda itself has no public URL of its own — API Gateway is what makes it callable over the internet.</p>
+        <div class="config">
+          <div><span class="k">api</span> FirstAWSAPI (HTTP API)</div>
+          <div><span class="k">id</span> ‹redacted›</div>
+          <div><span class="k">route</span> GET /hello</div>
+        </div>
+        <div class="why"><b>Why it matters</b>HTTP API (not the older REST API type) was chosen — cheaper and lower-latency for a simple pass-through route like this. Its invoke URL is exactly what gets registered as the Named Credential's endpoint on the Salesforce side.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Secrets Manager</h3>
+          <div class="chip-row"><span class="chip aws">Credential store</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what">Encrypted, managed storage for the API key, so it never sits in plaintext inside the Lambda's source code or environment variables.</p>
+        <div class="config">
+          <div><span class="k">secret</span> sfdc/lambda/apikey</div>
+          <div><span class="k">key</span> x-api-key</div>
+        </div>
+        <div class="why"><b>Why it matters</b>Lambda reads the current key at invocation time instead of trusting a value baked into deployed code. The key can be rotated in Secrets Manager without touching or redeploying the function.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>IAM inline policy</h3>
+          <div class="chip-row"><span class="chip aws">Least privilege</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what">A permission attached directly to the Lambda's execution role, scoped to exactly one action on exactly one resource.</p>
+        <div class="config">
+          <div><span class="k">name</span> ReadLambdaAPIKey</div>
+          <div><span class="k">grants</span> secretsmanager:GetSecretValue</div>
+          <div><span class="k">scope</span> sfdc/lambda/apikey only</div>
+        </div>
+        <div class="why"><b>Why it matters</b>The function can read its own secret and nothing else in the AWS account. If the function were ever compromised, the blast radius is one secret, not the whole Secrets Manager store.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">03</span>
+      <h2>Salesforce side</h2>
+    </div>
+    <div class="grid-two">
+
+      <div class="card">
+        <div class="card-head">
+          <h3>External Credential</h3>
+          <div class="chip-row"><span class="chip sf">Auth definition</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what">Defines <em>how</em> to authenticate, kept separate from <em>where</em> to call. This is the current recommended pattern — it replaced folding auth details directly into a legacy Named Credential, and was used here instead of a Connected App because there's no OAuth flow: just one static header.</p>
+        <div class="config">
+          <div><span class="k">name</span> AWS Lambda Credential</div>
+          <div><span class="k">scheme</span> Custom</div>
+          <div><span class="k">principal type</span> Named Principal</div>
+        </div>
+        <div class="why"><b>Why it matters</b>Custom auth lets Salesforce attach an arbitrary header (x-api-key) to every callout — there's no built-in scheme for "static API key in a custom header," so Custom is what makes this possible at all.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Principal</h3>
+          <div class="chip-row"><span class="chip sf">Secret holder</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what">The actual credential value lives here, one level under the External Credential. "Named" means it's a single org-wide credential, not one per user.</p>
+        <div class="config">
+          <div><span class="k">name</span> AWSlambdaPrincipal</div>
+          <div><span class="k">header</span> x-api-key</div>
+        </div>
+        <div class="why"><b>Why it matters</b>Storing the key here — rather than in Apex — means the secret never appears in code, debug logs, or version control. Apex only ever references the Named Credential by name.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Named Credential</h3>
+          <div class="chip-row"><span class="chip sf">Endpoint</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what">Points at the actual URL to call and links back to the External Credential for how to authenticate the call.</p>
+        <div class="config">
+          <div><span class="k">name</span> AWS_Lambda_Hello</div>
+          <div><span class="k">url</span> API Gateway invoke URL</div>
+          <div><span class="k">auth</span> AWS Lambda Credential</div>
+        </div>
+        <div class="why"><b>Why it matters</b>Apex calls <code>callout:AWS_Lambda_Hello</code> instead of a hardcoded URL. No Remote Site Settings needed, and the endpoint can move without a code change or deployment.</div>
+      </div>
+
+      <div class="card">
+        <div class="card-head">
+          <h3>Apex + Permission Set</h3>
+          <div class="chip-row"><span class="chip sf">Access control</span><span class="chip good">Complete</span></div>
+        </div>
+        <p class="what"><code>AWSLambdaService.callHelloLambda(String name)</code> builds the HttpRequest against the named credential. The <b>AWS Integration</b> permission set separately grants External Credential Principal Access.</p>
+        <div class="config">
+          <div><span class="k">class</span> AWSLambdaService</div>
+          <div><span class="k">perm set</span> AWS Integration</div>
+        </div>
+        <div class="why"><b>Why it matters</b>Code deployment and credential access are two separate gates. A user can have the Apex class available to them and still be unable to actually use the stored secret without this permission set.</div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">04</span>
+      <h2>What happens on one request</h2>
+    </div>
+    <ol class="lifecycle">
+      <li>
+        <div class="step-title">Apex issues the callout</div>
+        <div class="step-body">Code calls <code>callout:AWS_Lambda_Hello/hello</code> — no URL or secret appears in the class itself.</div>
+      </li>
+      <li>
+        <div class="step-title">Salesforce resolves credentials</div>
+        <div class="step-body">The platform looks up the Named Credential, follows it to the External Credential, and attaches the Principal's <code>x-api-key</code> header automatically.</div>
+      </li>
+      <li>
+        <div class="step-title">Request leaves Salesforce</div>
+        <div class="step-body">An HTTPS request hits the API Gateway invoke URL for <code>GET /hello</code>.</div>
+      </li>
+      <li>
+        <div class="step-title">API Gateway routes to Lambda</div>
+        <div class="step-body">The matching route forwards the request, headers included, to <code>sfdc-hello-lambda</code>.</div>
+      </li>
+      <li>
+        <div class="step-title">Lambda fetches the real secret</div>
+        <div class="step-body">Using its IAM-granted permission, the function calls Secrets Manager for the current value of <code>sfdc/lambda/apikey</code>.</div>
+      </li>
+      <li>
+        <div class="step-title">Lambda validates the header</div>
+        <div class="step-body">The incoming <code>x-api-key</code> is compared against the Secrets Manager value. Mismatch → reject before any business logic runs.</div>
+      </li>
+      <li>
+        <div class="step-title">Response returns to Apex</div>
+        <div class="step-body">Lambda's response travels back through API Gateway; Apex reads it off the <code>HttpResponse</code>.</div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">05</span>
+      <h2>Quick reference</h2>
+    </div>
+    <div class="glossary-wrap">
+      <table>
+        <thead>
+          <tr><th>Term</th><th>What it actually means here</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>External Credential</td><td>Modern, reusable definition of an auth scheme — decoupled from any one endpoint, so it can back multiple Named Credentials at once.</td></tr>
+          <tr><td>Named Credential</td><td>Endpoint + a pointer to the auth scheme that secures it. What Apex actually calls.</td></tr>
+          <tr><td>Connected App</td><td>Not used here — that's for OAuth-based flows (login, or Salesforce as the OAuth server/client). This integration uses a static header instead.</td></tr>
+          <tr><td>HTTP API vs REST API</td><td>Both are API Gateway product types. HTTP API is the newer, cheaper, lower-latency option for straightforward request pass-through — used here.</td></tr>
+          <tr><td>IAM inline policy</td><td>A permission attached directly to one role rather than a standalone reusable policy — appropriate for a one-off, tightly scoped grant like this.</td></tr>
+          <tr><td>Secrets Manager</td><td>Encrypted secret storage with an API to fetch values at runtime, instead of hardcoding them.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">06</span>
+      <h2>Up next</h2>
+    </div>
+    <div class="next-list">
+      <div class="next-item">
+        <span class="status-dot"></span>
+        <div class="txt">
+          <div class="title">Send record data via POST</div>
+          <div class="desc">Extend the Apex service to POST Salesforce record data to Lambda for processing, instead of the current no-payload GET.</div>
+        </div>
+        <span class="tag">Not started</span>
+      </div>
+      <div class="next-item">
+        <span class="status-dot"></span>
+        <div class="txt">
+          <div class="title">Async pattern: Platform Events → EventBridge → Lambda</div>
+          <div class="desc">Move from synchronous request/response to an event-driven flow, decoupling Salesforce from Lambda's response time.</div>
+        </div>
+        <span class="tag">Not started</span>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    Logged for step-by-step resumption — pick one "Up next" item and work it end to end before starting the other. No credentials, keys, or account IDs appear on this page — resource identifiers are redacted for public hosting.
+  </footer>
+
+</div>
+</body>
+</html>
