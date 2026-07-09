@@ -331,6 +331,10 @@
     font-size: 0.94rem;
     margin-bottom: 2px;
   }
+  .lifecycle .step-title .chip {
+    margin-right: 6px;
+    transform: translateY(-1px);
+  }
   .lifecycle .step-body {
     color: var(--ink-soft);
     font-size: 0.9rem;
@@ -488,6 +492,59 @@
   <section>
     <div class="section-head">
       <span class="section-num">02</span>
+      <h2>Build sequence</h2>
+    </div>
+    <ol class="lifecycle">
+      <li>
+        <div class="step-title"><span class="chip aws">AWS</span> Create the Lambda function</div>
+        <div class="step-body"><code>sfdc-hello-lambda</code> on Python 3.12 — starts as a bare handler that returns a hello response, before any auth is wired in.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip aws">AWS</span> Store the API key in Secrets Manager</div>
+        <div class="step-body">Create the <code>sfdc/lambda/apikey</code> secret holding the <code>x-api-key</code> value the function will check every request against, instead of hardcoding it.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip aws">AWS</span> Grant the function read access to that one secret</div>
+        <div class="step-body">Attach the <code>ReadLambdaAPIKey</code> inline policy to the Lambda's execution role, scoped to <code>secretsmanager:GetSecretValue</code> on that single secret ARN.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip aws">AWS</span> Add the header check to the Lambda code</div>
+        <div class="step-body">On every invocation, fetch the current secret value and compare it to the incoming <code>x-api-key</code> header before running any real logic.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip aws">AWS</span> Create the API Gateway HTTP API</div>
+        <div class="step-body"><code>FirstAWSAPI</code>, with a <code>GET /hello</code> route pointing at the Lambda — this is what gives the function a public HTTPS URL to be called on.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip sf">Salesforce</span> Create the External Credential</div>
+        <div class="step-body"><code>AWS Lambda Credential</code>, Custom auth scheme, Named Principal — defines how to authenticate before any endpoint is attached to it.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip sf">Salesforce</span> Add the Principal under it</div>
+        <div class="step-body"><code>AWSlambdaPrincipal</code>, storing the same <code>x-api-key</code> value as a custom header — this is the actual secret Salesforce will send.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip sf">Salesforce</span> Create the Named Credential</div>
+        <div class="step-body"><code>AWS_Lambda_Hello</code>, pointed at the API Gateway invoke URL from step 5, linked to the External Credential from step 6 for auth.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip sf">Salesforce</span> Create the Permission Set</div>
+        <div class="step-body"><code>AWS Integration</code>, granting External Credential Principal Access — without this grant, no user can actually use the stored header, even with the Apex class available to them.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip sf">Salesforce</span> Write the Apex service class</div>
+        <div class="step-body"><code>AWSLambdaService.callHelloLambda(String name)</code> — builds and sends the <code>HttpRequest</code> against <code>callout:AWS_Lambda_Hello</code>, with no URL or secret in the code itself.</div>
+      </li>
+      <li>
+        <div class="step-title"><span class="chip sf">Salesforce</span> Assign the permission set and test end to end</div>
+        <div class="step-body">Grant <code>AWS Integration</code> to the running user, then call the method from Execute Anonymous and confirm a 200 response comes back from the Lambda.</div>
+      </li>
+    </ol>
+  </section>
+
+  <section>
+    <div class="section-head">
+      <span class="section-num">03</span>
       <h2>AWS side</h2>
     </div>
     <div class="grid-two">
@@ -552,7 +609,7 @@
 
   <section>
     <div class="section-head">
-      <span class="section-num">03</span>
+      <span class="section-num">04</span>
       <h2>Salesforce side</h2>
     </div>
     <div class="grid-two">
@@ -616,7 +673,7 @@
 
   <section>
     <div class="section-head">
-      <span class="section-num">04</span>
+      <span class="section-num">05</span>
       <h2>What happens on one request</h2>
     </div>
     <ol class="lifecycle">
@@ -653,7 +710,7 @@
 
   <section>
     <div class="section-head">
-      <span class="section-num">05</span>
+      <span class="section-num">06</span>
       <h2>Quick reference</h2>
     </div>
     <div class="glossary-wrap">
@@ -675,7 +732,7 @@
 
   <section>
     <div class="section-head">
-      <span class="section-num">06</span>
+      <span class="section-num">07</span>
       <h2>Up next</h2>
     </div>
     <div class="next-list">
